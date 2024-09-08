@@ -4,7 +4,8 @@
   "description": "Trabalho Final de Processamento Digital de Imagens",
   "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start:dev": "nodemon"
   },
   "repository": {
     "type": "git",
@@ -15,5 +16,10 @@
   "bugs": {
     "url": "https://github.com/solidsantos/PDI_AP2/issues"
   },
-  "homepage": "https://github.com/solidsantos/PDI_AP2#readme"
+  "type": "module",
+  "homepage": "https://github.com/solidsantos/PDI_AP2#readme",
+  "dependencies": {
+    "express": "^4.19.2",
+    "multer": "^1.4.5-lts.1"
+  }
 }
