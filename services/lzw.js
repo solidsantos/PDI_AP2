@@ -67,46 +67,60 @@ function createLZWHeader(width, height) {
 }
 
 // Função para ler os dados de pixel (mantendo o formato BGR)
+// Função para ler os dados de pixel (mantendo o formato BGR)
 function readPixelData(bmpData) {
+    // Ler largura e altura da imagem
     const width = bmpData.readUInt32LE(18);
     const height = bmpData.readUInt32LE(22);
-    const rowSize = Math.ceil((width * 3) / 4) * 4; // Alinhamento dos bytes em múltiplos de 4
-    const pixelData = Buffer.alloc(width * height * 3); // Alocar o buffer correto sem o padding
 
-    for (let y = 0; y < height; y++) {
-        bmpData.copy(pixelData, y * width * 3, 54 + y * rowSize, 54 + y * rowSize + width * 3); // Copiar apenas os dados de pixel
+    // Calcular o tamanho da linha incluindo o padding
+    const bitsPerPixel = 24;
+    const bytesPerPixel = bitsPerPixel / 8;
+    const rowSize = Math.ceil((width * bytesPerPixel) / 4) * 4; // Alinhamento dos bytes em múltiplos de 4
+
+    // Buffer para armazenar os dados dos pixels
+    const pixelData = Buffer.alloc(width * height * bytesPerPixel);
+
+    // Offset dos dados de pixel
+    const pixelDataOffset = bmpData.readUInt32LE(10);
+
+    let srcOffset = pixelDataOffset;
+    let dstOffset = 0;
+
+    // Ler linha a linha da imagem BMP, do final para o início (BMP é armazenado de baixo para cima)
+    for (let y = height - 1; y >= 0; y--) {
+        bmpData.copy(pixelData, dstOffset, srcOffset, srcOffset + width * bytesPerPixel);
+        srcOffset += rowSize;
+        dstOffset += width * bytesPerPixel;
     }
 
-    return pixelData;
-}
-
-// Função para inverter cores BGR para RGB
-function invertColors(pixelData, width, height) {
-    for (let i = 0; i < width * height * 3; i += 3) {
-        const temp = pixelData[i]; // B
-        pixelData[i] = pixelData[i + 2]; // R
-        pixelData[i + 2] = temp; // Troca de R e B
-    }
     return pixelData;
 }
 
 // Função para comprimir uma imagem BMP
+// Função para comprimir uma imagem BMP
 export function compressImage(inputFilePath, outputFilePath) {
-    const bmpData = fs.readFileSync(inputFilePath);
-    const pixelData = readPixelData(bmpData); // Ler os dados de pixel no formato BGR
+    return new Promise((resolve, reject) => {
+        try {
+            const bmpData = fs.readFileSync(inputFilePath);
+            const pixelData = readPixelData(bmpData); // Ler os dados de pixel no formato BGR
 
-    // Aplique a compressão LZW
-    const compressedData = applyLZW(pixelData);
+            // Aplique a compressão LZW
+            const compressedData = applyLZW(pixelData);
 
-    // Extrair largura e altura da imagem BMP
-    const width = bmpData.readUInt32LE(18);
-    const height = bmpData.readUInt32LE(22);
+            // Extrair largura e altura da imagem BMP
+            const width = bmpData.readUInt32LE(18);
+            const height = bmpData.readUInt32LE(22);
 
-    // Salve o arquivo comprimido
-    saveCompressedFileLZW(compressedData, width, height, outputFilePath);
-
-    console.log('Image compressed successfully!');
+            // Salve o arquivo comprimido
+            saveCompressedFileLZW(compressedData, width, height, outputFilePath);
+            resolve();
+        } catch (error) {
+            reject(error);
+        }
+    });
 }
+
 
 // Função para descomprimir dados LZW
 function decompressLZW(compressedData, width, height) {
@@ -164,49 +178,46 @@ function readLZWHeader(filePath) {
 
 // Função para descomprimir uma imagem LZW
 export function decompressImage(inputFilePath, outputFilePath) {
-    // Leia o arquivo comprimido
-    const compressedData = fs.readFileSync(inputFilePath);
+    return new Promise((resolve, reject) => {
+        try {
+            // Leia o arquivo comprimido
+            const compressedData = fs.readFileSync(inputFilePath);
 
-    // Extrair o cabeçalho (largura e altura) do arquivo comprimido
-    const { width, height } = readLZWHeader(inputFilePath);
+            // Extrair o cabeçalho (largura e altura) do arquivo comprimido
+            const { width, height } = readLZWHeader(inputFilePath);
 
-    // Dados comprimidos
-    const compressedArray = [];
-    for (let i = 8; i < compressedData.length; i += 2) {
-        compressedArray.push(compressedData.readUInt16LE(i));
-    }
+            // Dados comprimidos
+            const compressedArray = [];
+            for (let i = 8; i < compressedData.length; i += 2) {
+                compressedArray.push(compressedData.readUInt16LE(i));
+            }
 
-    // Aplique a descompressão LZW
-    let pixelData = decompressLZW(compressedArray, width, height);
+            // Aplique a descompressão LZW
+            let pixelData = decompressLZW(compressedArray, width, height);
 
-    // Inverter as cores de BGR para RGB, se necessário
-    pixelData = invertColors(pixelData, width, height);
+            // Adicionar o cabeçalho BMP de volta à imagem
+            const bmpHeader = Buffer.alloc(54); // Cabeçalho BMP completo
+            bmpHeader.writeUInt32LE(0x4D42, 0); // 'BM' header
+            bmpHeader.writeUInt32LE(54 + pixelData.length, 2); // Tamanho do arquivo
+            bmpHeader.writeUInt32LE(54, 10); // Offset dos dados da imagem
+            bmpHeader.writeUInt32LE(40, 14); // Tamanho do cabeçalho de informação
+            bmpHeader.writeUInt32LE(width, 18); // Largura
+            bmpHeader.writeUInt32LE(height, 22); // Altura
+            bmpHeader.writeUInt16LE(1, 26); // Planos de cor
+            bmpHeader.writeUInt16LE(24, 28); // Profundidade de cor
+            bmpHeader.writeUInt32LE(0, 30); // Compressão
+            bmpHeader.writeUInt32LE(pixelData.length, 34); // Tamanho dos dados da imagem
+            bmpHeader.writeUInt32LE(2835, 38); // Resolução horizontal
+            bmpHeader.writeUInt32LE(2835, 42); // Resolução vertical
+            bmpHeader.writeUInt32LE(0, 46); // Número de cores na paleta
+            bmpHeader.writeUInt32LE(0, 50); // Número de cores importantes
 
-    // Adicionar o cabeçalho BMP de volta à imagem
-    const bmpHeader = Buffer.alloc(54); // Cabeçalho BMP completo
-    bmpHeader.writeUInt32LE(0x4D42, 0); // 'BM' header
-    bmpHeader.writeUInt32LE(54 + pixelData.length, 2); // Tamanho do arquivo
-    bmpHeader.writeUInt32LE(54, 10); // Offset dos dados da imagem
-    bmpHeader.writeUInt32LE(40, 14); // Tamanho do cabeçalho de informação
-    bmpHeader.writeUInt32LE(width, 18); // Largura
-    bmpHeader.writeUInt32LE(height, 22); // Altura
-    bmpHeader.writeUInt16LE(1, 26); // Planos de cor
-    bmpHeader.writeUInt16LE(24, 28); // Profundidade de cor
-    bmpHeader.writeUInt32LE(0, 30); // Compressão
-    bmpHeader.writeUInt32LE(pixelData.length, 34); // Tamanho dos dados da imagem
-    bmpHeader.writeUInt32LE(2835, 38); // Resolução horizontal
-    bmpHeader.writeUInt32LE(2835, 42); // Resolução vertical
-    bmpHeader.writeUInt32LE(0, 46); // Número de cores na paleta
-    bmpHeader.writeUInt32LE(0, 50); // Número de cores importantes
-
-    // Salve a imagem descomprimida
-    const bmpImage = Buffer.concat([bmpHeader, pixelData]);
-    fs.writeFileSync(outputFilePath, bmpImage);
-
-    console.log('Image decompressed successfully!');
+            // Salve a imagem descomprimida
+            const bmpImage = Buffer.concat([bmpHeader, pixelData]);
+            fs.writeFileSync(outputFilePath, bmpImage);
+            resolve();
+        } catch (error) {
+            reject(error);
+        }
+    });
 }
-
-// Testar a compressão e descompressão
-
-compressImage('./uploads/benchmark.bmp', './uploads/benchmark.lzw');
-decompressImage('./uploads/benchmark.lzw', './uploads/benchmark_02.bmp');
