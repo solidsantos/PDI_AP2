@@ -10,21 +10,6 @@ function showMessage(message, isError = false) {
     }
 }
 
-document.getElementById('uploadForm').addEventListener('submit', (e) => {
-    e.preventDefault();
-    const formData = new FormData(e.target);  // Use e.target para referir-se ao formulário
-    fetch('/upload', {
-        method: 'POST',
-        body: formData
-    })
-        .then(response => response.json())
-        .then(data => {
-            window.alert(data.message);
-            e.target.reset();
-        })
-        .catch(error => showMessage('Erro ao enviar a imagem.', true));
-});
-
 document.getElementById('compressForm').addEventListener('submit', (e) => {
     e.preventDefault(); // Impede o envio padrão do formulário
 
