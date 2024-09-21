@@ -4,8 +4,6 @@ import path from 'path';
 import fs from 'fs';
 import { upload, formatSize } from './services/utils.js';
 import { compressImage, decompressImage } from './services/lzw.js';
-import { error } from 'console';
-
 const router = express.Router();
 
 // Rota POST para upload de imagens
@@ -16,49 +14,71 @@ router.post('/upload', upload.single('image'), (req, res) => {
     res.status(201).json({message: 'Upload successfully!'});
 });
 
-router.post('/compresslzw', upload.single('image'), (req, res) => {
+router.post('/compress', upload.single('image'), (req, res) => {
     if (!req.file) {
         return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    const inputFilePath = path.join('uploads', req.file.originalname);
-    const outputFilePath = path.join('uploads', 'compressed', req.file.originalname.replace(".bmp", "") + '.lzw');
+    const inputBMPFile = path.join('uploads', req.file.originalname);
+    const outputLZWFile = path.join('uploads', 'compressed', req.file.originalname.replace('.bmp', '') + '.lzw');
+    const outputPDIFile = path.join('uploads', 'compressed', req.file.originalname.replace('.bmp', '') + '.pdi');
 
-    compressImage(inputFilePath, outputFilePath)
-        .then(() => {
-            res.status(201).json({ message: 'File compressed successfully!', file: outputFilePath });
-            // Note: Se você quiser que o cliente faça o download do arquivo imediatamente após o upload,
-            // você pode usar res.download() em vez de res.status(201).json(), mas não ambos ao mesmo tempo.
-        })
-        .catch((err) => {
-            res.status(500).json({ error: 'Failed to compress image', details: err.message });
-        });
+    (async () => {
+        try {
+            // Compressão LZW
+            await compressImage(inputBMPFile, outputLZWFile);
+
+            // Compressão Huffman
+            const huff = await import('./services/huff.js');
+            await huff.compressLZWFile(outputLZWFile, outputPDIFile);
+
+            // Exclui o arquivo .lzw após gerar o .pdi
+            fs.unlinkSync(outputLZWFile);
+            
+            res.status(201).json({ message: 'File compressed successfully!', file: outputPDIFile });
+        } catch (error) {
+            console.error("Erro:", error);
+            res.status(500).json({ error: 'Failed to compress image', details: error.message });
+        }
+    })();
 });
 
-router.post('/decompresslzw', upload.single('image'), (req, res) => {
+router.post('/decompress', upload.single('image'), (req, res) => {
     if (!req.file) {
         return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    // Verifique se o arquivo é um arquivo .lzw
-    if (!req.file.originalname.endsWith('.lzw')) {
-        return res.status(400).json({ error: 'Invalid file type. Expected a .lzw file.' });
+    // Verifique se o arquivo é um arquivo .pdi
+    if (!req.file.originalname.endsWith('.pdi')) {
+        return res.status(400).json({ error: 'Invalid file type. Expected a .pdi file.' });
     }
 
-    const inputFilePath = path.join('uploads', req.file.originalname);
-    const outputFilePath = path.join('uploads', 'decompressed', req.file.originalname.replace('.lzw', '.bmp'));
+    const inputPDIFile = path.join('uploads', req.file.originalname);
+    const outputLZWFile = path.join('uploads', 'decompressed', req.file.originalname.replace('.pdi', '.lzw'));
+    const outputBMPFile = path.join('uploads', 'decompressed', req.file.originalname.replace('.pdi', '.bmp'));
 
-    decompressImage(inputFilePath, outputFilePath)
-        .then(() => {
-            res.status(201).json({ message: 'File decompressed successfully!', file: outputFilePath });
-            // Optionally, you might want to remove the uploaded file if no longer needed
-            fs.unlinkSync(inputFilePath);
-        })
-        .catch((err) => {
-            res.status(500).json({ error: 'Failed to decompress image', details: err.message });
-        });
+    (async () => {
+        try {
+            // Descompressão Huffman para gerar o arquivo .lzw
+            const huff = await import('./services/huff.js');
+
+            await huff.decompressLZWFile(inputPDIFile, outputLZWFile);
+
+            fs.unlinkSync(inputPDIFile);
+            
+            // Descompressão LZW para gerar o arquivo .bmp
+            await decompressImage(outputLZWFile, outputBMPFile);
+
+            // Exclui o arquivo .lzw após gerar o .bmp
+            fs.unlinkSync(outputLZWFile);
+
+            res.status(201).json({ message: 'File decompressed successfully!', file: outputBMPFile });
+        } catch (error) {
+            console.error("Erro:", error);
+            res.status(500).json({ error: 'Failed to decompress image', details: error.message });
+        }
+    })();
 });
-
 
 // Middleware de tratamento de erros
 router.use((err, req, res, next) => {
