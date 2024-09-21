@@ -3,82 +3,20 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { upload, formatSize } from './services/utils.js';
-import { compressImage, decompressImage } from './services/lzw.js';
+import imageController from './controllers/imageController.js';
+
 const router = express.Router();
 
+router.get('/', imageController.renderHome);
+
 // Rota POST para upload de imagens
-router.post('/upload', upload.single('image'), (req, res) => {
-    if (!req.file) {
-        return res.status(400).send('File not sent.');
-    }
-    res.status(201).json({message: 'Upload successfully!'});
-});
+router.post('/upload', imageController.uploadImage);
 
-router.post('/compress', upload.single('image'), (req, res) => {
-    if (!req.file) {
-        return res.status(400).json({ error: 'No file uploaded' });
-    }
+// Rota POST para compressão de imagens
+router.post('/compress', upload.single('image'), imageController.compress);
 
-    const inputBMPFile = path.join('uploads', req.file.originalname);
-    const outputLZWFile = path.join('uploads', 'compressed', req.file.originalname.replace('.bmp', '') + '.lzw');
-    const outputPDIFile = path.join('uploads', 'compressed', req.file.originalname.replace('.bmp', '') + '.pdi');
-
-    (async () => {
-        try {
-            // Compressão LZW
-            await compressImage(inputBMPFile, outputLZWFile);
-
-            // Compressão Huffman
-            const huff = await import('./services/huff.js');
-            await huff.compressLZWFile(outputLZWFile, outputPDIFile);
-
-            // Exclui o arquivo .lzw após gerar o .pdi
-            fs.unlinkSync(outputLZWFile);
-            
-            res.status(201).json({ message: 'File compressed successfully!', file: outputPDIFile });
-        } catch (error) {
-            console.error("Erro:", error);
-            res.status(500).json({ error: 'Failed to compress image', details: error.message });
-        }
-    })();
-});
-
-router.post('/decompress', upload.single('image'), (req, res) => {
-    if (!req.file) {
-        return res.status(400).json({ error: 'No file uploaded' });
-    }
-
-    // Verifique se o arquivo é um arquivo .pdi
-    if (!req.file.originalname.endsWith('.pdi')) {
-        return res.status(400).json({ error: 'Invalid file type. Expected a .pdi file.' });
-    }
-
-    const inputPDIFile = path.join('uploads', req.file.originalname);
-    const outputLZWFile = path.join('uploads', 'decompressed', req.file.originalname.replace('.pdi', '.lzw'));
-    const outputBMPFile = path.join('uploads', 'decompressed', req.file.originalname.replace('.pdi', '.bmp'));
-
-    (async () => {
-        try {
-            // Descompressão Huffman para gerar o arquivo .lzw
-            const huff = await import('./services/huff.js');
-
-            await huff.decompressLZWFile(inputPDIFile, outputLZWFile);
-
-            fs.unlinkSync(inputPDIFile);
-            
-            // Descompressão LZW para gerar o arquivo .bmp
-            await decompressImage(outputLZWFile, outputBMPFile);
-
-            // Exclui o arquivo .lzw após gerar o .bmp
-            fs.unlinkSync(outputLZWFile);
-
-            res.status(201).json({ message: 'File decompressed successfully!', file: outputBMPFile });
-        } catch (error) {
-            console.error("Erro:", error);
-            res.status(500).json({ error: 'Failed to decompress image', details: error.message });
-        }
-    })();
-});
+//Rota POST para descompressão de imagens
+router.post('/decompress', upload.single('image'), imageController.decompress);
 
 // Middleware de tratamento de erros
 router.use((err, req, res, next) => {
@@ -91,6 +29,8 @@ router.use((err, req, res, next) => {
     }
     res.status(500).send('Internal Server Error.');
 });
+
+//--------------------------------------------
 
 // Função auxiliar para ler diretórios recursivamente
 function readDirectory(directoryPath) {
@@ -147,6 +87,7 @@ function readDirectory(directoryPath) {
     });
 }
 
+/*
 // Rota GET para listar todas as imagens
 router.get('/images', (req, res) => {
     const directoryPath = path.join('uploads');
@@ -166,5 +107,5 @@ router.delete('/image/:filename', (req, res) => {
         }
         res.send('Image deleted successfully!');
     });
-});
+});*/
 export default router;
