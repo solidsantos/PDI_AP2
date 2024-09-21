@@ -3,17 +3,22 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { upload, formatSize } from './services/utils.js';
-import { compressImage, decompressImage } from './services/lzw.js';
+import imageController from './controllers/imageController.js';
+
 const router = express.Router();
 
-// Rota POST para upload de imagens
-router.post('/upload', upload.single('image'), (req, res) => {
-    if (!req.file) {
-        return res.status(400).send('File not sent.');
-    }
-    res.status(201).json({message: 'Upload successfully!'});
-});
+router.get('/', imageController.renderHome);
 
+// Rota POST para upload de imagens
+router.post('/upload', imageController.uploadImage);
+
+// Rota POST para compressão de imagens
+router.post('/compress', upload.single('image'), imageController.compress);
+
+//Rota POST para descompressão de imagens
+router.post('/decompress', upload.single('image'), imageController.decompress);
+
+/*
 router.post('/compress', upload.single('image'), (req, res) => {
     if (!req.file) {
         return res.status(400).json({ error: 'No file uploaded' });
@@ -78,7 +83,7 @@ router.post('/decompress', upload.single('image'), (req, res) => {
             res.status(500).json({ error: 'Failed to decompress image', details: error.message });
         }
     })();
-});
+});*/
 
 // Middleware de tratamento de erros
 router.use((err, req, res, next) => {
@@ -147,6 +152,7 @@ function readDirectory(directoryPath) {
     });
 }
 
+/*
 // Rota GET para listar todas as imagens
 router.get('/images', (req, res) => {
     const directoryPath = path.join('uploads');
@@ -166,5 +172,5 @@ router.delete('/image/:filename', (req, res) => {
         }
         res.send('Image deleted successfully!');
     });
-});
+});*/
 export default router;
