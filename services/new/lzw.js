@@ -47,14 +47,14 @@ function createLZWHeader(width, height) {
 function saveCompressedFileLZW(compressedData, width, height, outputFilePath) {
     const header = createLZWHeader(width, height);
     const compressedBuffer = Buffer.alloc(compressedData.length * 2);
-    
     for (let i = 0; i < compressedData.length; i++) {
         compressedBuffer.writeUInt16LE(compressedData[i], i * 2);
     }
-    
     const finalBuffer = Buffer.concat([header, compressedBuffer]);
+    //console.log('Final Buffer Size:', finalBuffer.length);
     fs.writeFileSync(outputFilePath, finalBuffer);
 }
+
 // Função para ler os dados de pixel (mantendo o formato BGR)
 function readPixelData(bmpData) {
     const width = bmpData.readUInt32LE(18);
@@ -83,15 +83,11 @@ export function compressImage(inputFilePath, outputFilePath) {
             const bmpData = fs.readFileSync(inputFilePath);
             const pixelData = readPixelData(bmpData);
             const compressedData = applyLZW(pixelData);
-
             const width = bmpData.readUInt32LE(18);
             const height = bmpData.readUInt32LE(22);
-
-            // Salvar o arquivo comprimido
             saveCompressedFileLZW(compressedData, width, height, outputFilePath);
             resolve();
         } catch (error) {
-            console.error("Erro na compressão:", error);
             reject(error);
         }
     });
@@ -155,56 +151,66 @@ function readLZWHeader(filePath) {
     const header = fs.readFileSync(filePath, { start: 0, end: headerSize - 1 });
     const width = header.readUInt32LE(0);
     const height = header.readUInt32LE(4);
+
+    if (width <= 0 || width > 10000) {
+        throw new Error('Invalid width in header');
+    }
+    if (height <= 0 || height > 10000) {
+        throw new Error('Invalid height in header');
+    }
+
     return { width, height };
 }
+
 // Função para descomprimir uma imagem LZW
 export function decompressImage(inputFilePath, outputFilePath) {
     return new Promise((resolve, reject) => {
         try {
             const compressedData = fs.readFileSync(inputFilePath);
             const { width, height } = readLZWHeader(inputFilePath);
-            
-            // Verificar se os dados são suficientes
-            if (compressedData.length < 8) {
-                throw new Error("Dados comprimidos inválidos. Tamanho insuficiente para ler códigos.");
-            }
-
             const compressedArray = [];
             for (let i = 8; i < compressedData.length; i += 2) {
-                if (i + 1 < compressedData.length) {
-                    compressedArray.push(compressedData.readUInt16LE(i));
-                }
+                compressedArray.push(compressedData.readUInt16LE(i));
             }
-
-            const pixelData = decompressLZW(compressedArray, width, height);
-
-            // Criar e salvar a imagem BMP
-            const bmpImage = createBMPImage(pixelData, width, height);
+            let pixelData = decompressLZW(compressedArray, width, height);
+            const bmpHeader = Buffer.alloc(54);
+            bmpHeader.writeUInt32LE(0x4D42, 0);
+            bmpHeader.writeUInt32LE(54 + pixelData.length, 2);
+            bmpHeader.writeUInt32LE(54, 10);
+            bmpHeader.writeUInt32LE(40, 14);
+            bmpHeader.writeUInt32LE(width, 18);
+            bmpHeader.writeUInt32LE(height, 22);
+            bmpHeader.writeUInt16LE(1, 26);
+            bmpHeader.writeUInt16LE(24, 28);
+            bmpHeader.writeUInt32LE(0, 30);
+            bmpHeader.writeUInt32LE(pixelData.length, 34);
+            bmpHeader.writeUInt32LE(2835, 38);
+            bmpHeader.writeUInt32LE(2835, 42);
+            bmpHeader.writeUInt32LE(0, 46);
+            bmpHeader.writeUInt32LE(0, 50);
+            const bmpImage = Buffer.concat([bmpHeader, pixelData]);
             fs.writeFileSync(outputFilePath, bmpImage);
             resolve();
         } catch (error) {
-            console.error("Erro na descompressão:", error);
             reject(error);
         }
     });
 }
 
-function createBMPImage(pixelData, width, height) {
-    const bmpHeader = Buffer.alloc(54);
-    bmpHeader.writeUInt32LE(0x4D42, 0);
-    bmpHeader.writeUInt32LE(54 + pixelData.length, 2);
-    bmpHeader.writeUInt32LE(54, 10);
-    bmpHeader.writeUInt32LE(40, 14);
-    bmpHeader.writeUInt32LE(width, 18);
-    bmpHeader.writeUInt32LE(height, 22);
-    bmpHeader.writeUInt16LE(1, 26);
-    bmpHeader.writeUInt16LE(24, 28);
-    bmpHeader.writeUInt32LE(0, 30);
-    bmpHeader.writeUInt32LE(pixelData.length, 34);
-    bmpHeader.writeUInt32LE(2835, 38);
-    bmpHeader.writeUInt32LE(2835, 42);
-    bmpHeader.writeUInt32LE(0, 46);
-    bmpHeader.writeUInt32LE(0, 50);
+// Função principal para compressão e descompressão
+(async () => {
+    const inputBMPFile = '../uploads/benchmark.bmp';
+    const outputPDIFile = '../uploads/compressed/benchmark.lzw';
+    const outputPDINewFile = '../uploads/decompressed/benchmark_decompressed.lzw';
+    const outputBMPFile = '../uploads/decompressed/benchmark_decompressed.bmp';
 
-    return Buffer.concat([bmpHeader, pixelData]);
-}
+    try {
+        await compressImage(inputBMPFile, outputPDIFile);
+        console.log("Compressão concluída.");
+        
+        await decompressImage(outputPDINewFile, outputBMPFile);
+        console.log("Descompressão concluída.");
+    } catch (error) {
+        console.error("Erro:", error);
+    }
+})();
